@@ -31,13 +31,13 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 # Enhanced CORS configuration
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost", "http://127.0.0.1"],
-        "methods": ["GET", "POST", "PUT", "DELETE"],
-        "allow_headers": ["Authorization", "Content-Type"]
-    }
-})
+# CORS(app, resources={
+#     r"/api/*": {
+#         "origins": ["http://localhost", "http://127.0.0.1"],
+#         "methods": ["GET", "POST", "PUT", "DELETE"],
+#         "allow_headers": ["Authorization", "Content-Type"]
+#     }
+# })
 
 # JWT Configuration
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'super-secret-key')
