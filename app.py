@@ -105,10 +105,10 @@ class MessageEncryption:
 # Database connection
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="",
-        database="securesysv2"
+        host="sql12.freesqldatabase.com",
+        user="sql12805028",
+        password="dcGkiB2xte",
+        database="sql12805028"
     )
 
 # Improved login endpoint
