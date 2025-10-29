@@ -33,7 +33,7 @@ SMTP_PORT = 587
 # Enhanced CORS configuration
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["*"],
+        "origins": ["https://finalscap.onrender.com"],
         "methods": ["GET", "POST", "PUT", "DELETE"],
         "allow_headers": ["Authorization", "Content-Type"]
     }
