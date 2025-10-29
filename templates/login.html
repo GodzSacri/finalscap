@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureSys Login & Register</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body {
+      height: 100vh;
+      background: linear-gradient(135deg, #4e54c8, #8f94fb);
+      display: flex; justify-content: center; align-items: center;
+    }
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2rem; border-radius: 15px;
+      width: 350px; box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+      backdrop-filter: blur(10px); color: #fff;
+      animation: fadeIn 1s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-20px);} to{opacity:1;transform:translateY(0);} }
+    h2 { text-align: center; margin-bottom: 1.5rem; color: white; }
+    .input-group { margin-bottom: 1rem; }
+    input {
+      width: 100%; padding: 0.8rem; margin: 0.5rem 0;
+      border: none; border-radius: 8px;
+      background: rgba(255,255,255,0.2); color: white; font-size: 1rem;
+    }
+    input:focus {
+      outline: none; background: rgba(255,255,255,0.3);
+      box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.4);
+    }
+    input::placeholder { color: #ddd; }
+    button {
+      width: 100%; padding: 0.8rem; margin-top: 1rem;
+      border: none; border-radius: 8px;
+      background: #6c63ff; color: white; font-weight: bold; font-size: 1rem;
+      cursor: pointer; transition: all 0.3s ease;
+    }
+    button:hover { background: #5a54e8; transform: translateY(-2px); }
+    button:active { transform: translateY(0); }
+    .toggle { text-align: center; margin-top: 1rem; font-size: 0.9rem; cursor: pointer; color: #ddd; }
+    .toggle:hover { color: white; text-decoration: underline; }
+    .hidden { display: none; }
+    .loading { display:inline-block;width:1rem;height:1rem;border:2px solid rgba(255,255,255,0.3);border-radius:50%;border-top-color:white;animation: spin 1s ease-in-out infinite;margin-right:0.5rem;}
+    @keyframes spin { to { transform: rotate(360deg);} }
+    .captcha { font-size: 0.9rem; margin: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 id="formTitle"> Login </h2>
+
+    <!-- Login Form -->
+    <div id="loginForm">
+      <div class="input-group">
+        <input type="email" id="loginEmail" placeholder="Email" autocomplete="username" />
+      </div>
+      <div class="input-group">
+        <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" />
+      </div>
+      <div class="input-group captcha">
+        <span id="loginCaptchaQuestion"></span>
+        <input type="number" id="loginCaptchaAnswer" placeholder="Enter answer" />
+      </div>
+      <button id="loginBtn" onclick="login()">
+        <span id="loginBtnText">Login</span>
+      </button>
+      <p class="toggle" onclick="toggleForm('register')">Don't have an account? Register</p>
+    </div>
+
+    <!-- Register Form -->
+    <div id="registerForm" class="hidden">
+      <div class="input-group">
+        <input type="email" id="regEmail" placeholder="Email" autocomplete="username" />
+      </div>
+      <div class="input-group">
+        <input type="password" id="regPassword" placeholder="Password" autocomplete="new-password" />
+      </div>
+      <div class="input-group">
+        <input type="password" id="regConfirmPassword" placeholder="Confirm Password" autocomplete="new-password" />
+      </div>
+      <div class="input-group captcha">
+        <span id="registerCaptchaQuestion"></span>
+        <input type="number" id="registerCaptchaAnswer" placeholder="Enter answer" />
+      </div>
+      <button id="registerBtn" onclick="register()">
+        <span id="registerBtnText">Register</span>
+      </button>
+      <p class="toggle" onclick="toggleForm('login')">Already have an account? Login</p>
+    </div>
+
+    <div id="notification" class="hidden" style="
+      position: fixed; bottom: 20px; right: 20px;
+      padding: 15px; border-radius: 8px;
+      background: #4CAF50; color: white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1000;"></div>
+  </div>
+
+<script>
+const apiUrl = "http://127.0.0.1:5000";
+
+let loginCaptchaAnswer = 0;
+let registerCaptchaAnswer = 0;
+
+// Generate captcha
+function generateCaptcha() {
+  let a = Math.floor(Math.random()*10)+1;
+  let b = Math.floor(Math.random()*10)+1;
+  loginCaptchaAnswer = a+b;
+  document.getElementById("loginCaptchaQuestion").textContent = `Solve: ${a} + ${b} = ?`;
+
+  let c = Math.floor(Math.random()*10)+1;
+  let d = Math.floor(Math.random()*10)+1;
+  registerCaptchaAnswer = c+d;
+  document.getElementById("registerCaptchaQuestion").textContent = `Solve: ${c} + ${d} = ?`;
+}
+
+// Show notification
+function showNotification(message, isError = false) {
+  const notification = document.getElementById('notification');
+  if (!notification) return;
+  notification.textContent = message;
+  notification.style.background = isError ? "#f44336" : "#4CAF50";
+  notification.classList.remove('hidden');
+  setTimeout(()=>{notification.classList.add('hidden');},3000);
+}
+
+// Toggle forms
+function toggleForm(formType) {
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const formTitle = document.getElementById('formTitle');
+  if (formType === 'register') {
+    loginForm.classList.add('hidden');
+    registerForm.classList.remove('hidden');
+    formTitle.textContent = 'Create Account';
+  } else {
+    registerForm.classList.add('hidden');
+    loginForm.classList.remove('hidden');
+    formTitle.textContent = 'Secure Login';
+  }
+  generateCaptcha();
+}
+
+// Login
+async function login() {
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  const captchaInput = parseInt(document.getElementById('loginCaptchaAnswer').value);
+
+  if (captchaInput !== loginCaptchaAnswer) {
+    showNotification("Captcha incorrect", true);
+    generateCaptcha();
+    return;
+  }
+
+  const loginBtn = document.getElementById('loginBtn');
+  const loginBtnText = document.getElementById('loginBtnText');
+  const originalText = loginBtnText.textContent;
+  loginBtn.disabled = true;
+  loginBtnText.innerHTML = '<div class="loading"></div> Logging in...';
+
+  try {
+    if (!email || !password) throw new Error('Email and password required');
+
+    const response = await fetch(`${apiUrl}/api/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+
+    if (!data.success) throw new Error(data.msg || 'Login failed');
+
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('email', email);
+    window.location.href = '/inbox';
+  } catch(err) {
+    showNotification(err.message, true);
+  } finally {
+    loginBtn.disabled = false;
+    loginBtnText.textContent = originalText;
+  }
+}
+
+// Register
+async function register() {
+  const email = document.getElementById('regEmail').value;
+  const password = document.getElementById('regPassword').value;
+  const confirmPassword = document.getElementById('regConfirmPassword').value;
+  const captchaInput = parseInt(document.getElementById('registerCaptchaAnswer').value);
+
+  if (captchaInput !== registerCaptchaAnswer) {
+    showNotification("Captcha incorrect", true);
+    generateCaptcha();
+    return;
+  }
+
+  const registerBtn = document.getElementById('registerBtn');
+  const registerBtnText = document.getElementById('registerBtnText');
+  const originalText = registerBtnText.textContent;
+  registerBtn.disabled = true;
+  registerBtnText.innerHTML = '<div class="loading"></div> Registering...';
+
+  try {
+    if (!email || !password || !confirmPassword) throw new Error('All fields are required');
+    if (password !== confirmPassword) throw new Error('Passwords do not match');
+
+    const response = await fetch(`${apiUrl}/api/register`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+
+    if (!data.success) throw new Error(data.msg || 'Registration failed');
+
+    showNotification("Registration successful! Please login");
+    toggleForm('login');
+  } catch(err) {
+    showNotification(err.message, true);
+  } finally {
+    registerBtn.disabled = false;
+    registerBtnText.textContent = originalText;
+  }
+}
+
+generateCaptcha();
+</script>
+</body>
+</html>
