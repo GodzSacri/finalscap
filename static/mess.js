@@ -4,7 +4,7 @@ const CONFIG = {
     TOKEN_KEY: "token",
     EMAIL_KEY: "email",
     ALLOWED_PATHS: ['/', '/login', '/register'],
-    REQUEST_TIMEOUT: 10000, // 10 seconds
+    REQUEST_TIMEOUT: 45000, // 45 seconds
     NOTIFICATION_DURATION: 3000 // 3 seconds
 };
 
