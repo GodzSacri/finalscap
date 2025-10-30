@@ -83,6 +83,79 @@
             display: inline-block;
             margin-left: 5px;
         }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 5px;
+            z-index: 10000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.error {
+            background: #f44336;
+        }
+
+        .loading-msg {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .error-msg {
+            text-align: center;
+            padding: 20px;
+            color: #f44336;
+        }
+
+        .message-item {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .message-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .encrypted-message {
+            border-left: 4px solid #4CAF50;
+        }
+
+        .encryption-badge {
+            background: #4CAF50;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .no-messages {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 
@@ -96,6 +169,7 @@
             </div>
             
             <div class="user-info">
+                <span id="userEmail" class="user-email"></span>
                 <button id="btnLogout" class="logout-btn">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </button>
@@ -153,22 +227,354 @@
         </div>
     </div>
     
-    <!-- Scripts -->
-    <script src="/static/mess.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    
-    <!-- Application Logic -->
+    <!-- Embedded JavaScript -->
     <script>
-        // Global Variables
+        // ==================== CONSTANTS AND CONFIGURATION ====================
+        const CONFIG = {
+            API_URL: "https://finalscap.onrender.com",
+            TOKEN_KEY: "token",
+            EMAIL_KEY: "email",
+            ALLOWED_PATHS: ['/', '/login', '/register'],
+            REQUEST_TIMEOUT: 30000,
+            NOTIFICATION_DURATION: 3000
+        };
+
+        const Auth = {
+            getToken: () => localStorage.getItem(CONFIG.TOKEN_KEY),
+            setToken: (token) => localStorage.setItem(CONFIG.TOKEN_KEY, token),
+            clearToken: () => localStorage.removeItem(CONFIG.TOKEN_KEY),
+            getEmail: () => localStorage.getItem(CONFIG.EMAIL_KEY),
+            setEmail: (email) => localStorage.setItem(CONFIG.EMAIL_KEY, email),
+            clearEmail: () => localStorage.removeItem(CONFIG.EMAIL_KEY),
+            clearAll: () => localStorage.clear(),
+            
+            isTokenValid: () => {
+                const token = Auth.getToken();
+                if (!token) return false;
+                
+                try {
+                    const tokenData = JSON.parse(atob(token.split('.')[1]));
+                    return tokenData.exp * 1000 > Date.now();
+                } catch (e) {
+                    return false;
+                }
+            },
+            
+            checkAuth: () => {
+                const currentPath = window.location.pathname;
+                const isAllowedPath = CONFIG.ALLOWED_PATHS.some(
+                    path => currentPath === path || currentPath.startsWith(path + '/')
+                );
+                
+                if (!Auth.isTokenValid() && !isAllowedPath) {
+                    Auth.clearAll();
+                    window.location.href = '/';
+                    return false;
+                }
+                return true;
+            }
+        };
+
+        // ==================== API COMMUNICATION ====================
+        const API = {
+            fetch: async (url, options = {}) => {
+                const fullUrl = url.startsWith('http') ? url : `${CONFIG.API_URL}${url}`;
+                
+                const headers = {
+                    'Authorization': `Bearer ${Auth.getToken()}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                };
+
+                let controller;
+                let timeoutId;
+
+                try {
+                    controller = new AbortController();
+                    timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+
+                    const response = await fetch(fullUrl, { 
+                        ...options, 
+                        headers,
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (response.status === 401) {
+                        Auth.clearAll();
+                        window.location.href = '/';
+                        throw new Error("Session expired. Please login again.");
+                    }
+
+                    if (response.status === 500) {
+                        throw new Error("Server error. Please try again later.");
+                    }
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.msg || `Request failed with status ${response.status}`);
+                    }
+
+                    return response;
+                } catch (error) {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    
+                    console.error("API Error:", error);
+                    let errorMessage = "An error occurred";
+                    
+                    if (error.name === 'AbortError') {
+                        errorMessage = "Request timed out. Please try again.";
+                    } else if (error.name === 'TypeError') {
+                        errorMessage = "Network error. Please check your connection.";
+                    } else {
+                        errorMessage = error.message || errorMessage;
+                    }
+                    
+                    throw new Error(errorMessage);
+                }
+            },
+
+            loadInbox: async () => {
+                try {
+                    const response = await API.fetch("/api/inbox");
+                    const data = await response.json();
+                    
+                    if (!data.success) {
+                        throw new Error(data.msg || "Failed to load inbox");
+                    }
+                    
+                    return data.messages || [];
+                } catch (error) {
+                    console.error("Failed to load inbox:", error);
+                    throw error;
+                }
+            },
+
+            requestOtp: async () => {
+                try {
+                    const response = await API.fetch("/api/request-otp", {
+                        method: "POST",
+                        body: JSON.stringify({})
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!data.success) {
+                        throw new Error(data.msg || "Failed to request OTP");
+                    }
+                    
+                    return data;
+                } catch (error) {
+                    console.error("Failed to request OTP:", error);
+                    throw error;
+                }
+            },
+
+            verifyOtp: async (otp) => {
+                try {
+                    const response = await API.fetch("/api/verify-otp", {
+                        method: "POST",
+                        body: JSON.stringify({ otp })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!data.success) {
+                        throw new Error(data.msg || "Invalid OTP");
+                    }
+                    
+                    return data;
+                } catch (error) {
+                    console.error("Failed to verify OTP:", error);
+                    throw error;
+                }
+            }
+        };
+
+        // ==================== UI MANAGEMENT ====================
+        const UI = {
+            showNotification: (message, isError = false) => {
+                const notification = document.getElementById("notification");
+                if (!notification) return;
+                
+                notification.textContent = message;
+                notification.className = `notification ${isError ? "error" : ""} show`;
+                
+                setTimeout(() => {
+                    notification.classList.remove("show");
+                }, CONFIG.NOTIFICATION_DURATION);
+            },
+
+            renderMessages: (messages, container) => {
+                if (!container) return;
+                
+                container.innerHTML = messages.length ? 
+                    messages.map(msg => `
+                        <div class="message-item ${msg.is_encrypted ? 'encrypted-message' : ''}" data-id="${msg.id}">
+                            <div class="message-header">
+                                <span class="from">
+                                    <i class="fas fa-user"></i> 
+                                    From: ${msg.sender_email || 'Unknown sender'}
+                                </span>
+                                <span class="to">
+                                    <i class="fas fa-arrow-right"></i> 
+                                   To: ${msg.recipient_email || 'Unknown recipient'}
+                                </span>
+                                <span class="date">${new Date(msg.timestamp).toLocaleString()}</span>
+                                ${msg.is_encrypted ? '<span class="encryption-badge"><i class="fas fa-lock"></i> Encrypted</span>' : ''}
+                            </div>
+                            <div class="message-subject">
+                                <strong>Subject:</strong> ${msg.subject || 'No subject'}
+                            </div>
+                        </div>
+                    `).join('') :
+                    '<div class="no-messages">No messages found</div>';
+            },
+
+            showLoading: (container, message = "Loading...") => {
+                if (container) {
+                    container.innerHTML = `
+                        <div class="loading-msg">
+                            <i class="fas fa-spinner fa-spin"></i> ${message}
+                        </div>
+                    `;
+                }
+            },
+
+            showError: (container, message = "An error occurred") => {
+                if (container) {
+                    container.innerHTML = `
+                        <div class="error-msg">
+                            <i class="fas fa-exclamation-triangle"></i> ${message}
+                        </div>
+                    `;
+                }
+            },
+
+            updateOtpButtonState: (isLoading = false) => {
+                const otpBtn = document.getElementById("requestOtpBtn");
+                if (!otpBtn) return;
+
+                if (isLoading) {
+                    otpBtn.disabled = true;
+                    otpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
+                } else {
+                    otpBtn.disabled = false;
+                    otpBtn.innerHTML = '<i class="fas fa-key"></i> Request OTP';
+                }
+            },
+
+            initializeUserInfo: () => {
+                const userEmail = document.getElementById("userEmail");
+                const email = Auth.getEmail();
+                
+                if (userEmail && email) {
+                    userEmail.innerHTML = `<i class="fas fa-user-circle"></i> ${email}`;
+                }
+            }
+        };
+
+        // ==================== APPLICATION STATE ====================
         let selectedMessageId = null;
         let isRequestingOtp = false;
+
+        // ==================== EVENT HANDLERS ====================
+        async function loadAndRenderInbox() {
+            const messageList = document.getElementById("messageList");
+            
+            try {
+                UI.showLoading(messageList, "Loading inbox...");
+                const messages = await API.loadInbox();
+                UI.renderMessages(messages, messageList);
+                
+                if (messages.length === 0) {
+                    UI.showNotification("No messages in inbox");
+                } else {
+                    const encryptedCount = messages.filter(msg => msg.is_encrypted).length;
+                    UI.showNotification(`Loaded ${messages.length} messages${encryptedCount > 0 ? ` (${encryptedCount} encrypted)` : ''}`);
+                }
+            } catch (error) {
+                console.error("Failed to load inbox:", error);
+                UI.showError(messageList, error.message);
+                UI.showNotification(error.message || "Error loading inbox", true);
+            }
+        }
+
+        async function requestOtp() {
+            if (isRequestingOtp) return;
+
+            try {
+                isRequestingOtp = true;
+                UI.updateOtpButtonState(true);
+                
+                const data = await API.requestOtp();
+                UI.showNotification(data.msg || "OTP sent to your Gmail!");
+            } catch (error) {
+                console.error("OTP Request Error:", error);
+                
+                let errorMessage = "Failed to request OTP. Please try again.";
+                if (error.message.includes("500")) {
+                    errorMessage = "Server error. Please try again later.";
+                } else if (error.message.includes("Network")) {
+                    errorMessage = "Network error. Please check your connection.";
+                } else {
+                    errorMessage = error.message || errorMessage;
+                }
+                
+                UI.showNotification(errorMessage, true);
+            } finally {
+                isRequestingOtp = false;
+                UI.updateOtpButtonState(false);
+            }
+        }
+
+        async function verifyOtp() {
+            const otp = document.getElementById("otpInput").value.trim();
+            const verifyBtn = document.getElementById("verifyOtpBtn");
+            
+            if (!otp) {
+                UI.showNotification("Please enter the OTP.", true);
+                return;
+            }
+
+            if (otp.length !== 6) {
+                UI.showNotification("OTP must be 6 digits.", true);
+                return;
+            }
+            
+            try {
+                verifyBtn.disabled = true;
+                verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+
+                const data = await API.verifyOtp(otp);
+                
+                UI.showNotification("OTP verified successfully!");
+                hideOtpModal();
+                window.location.href = `/view_message/${selectedMessageId}`;
+            } catch (err) {
+                console.error("OTP verification error:", err);
+                UI.showNotification(err.message || "Error verifying OTP", true);
+                document.getElementById("otpInput").value = "";
+                document.getElementById("otpInput").focus();
+            } finally {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = 'Verify';
+            }
+        }
+
+        function showOtpModal() {
+            const modal = document.getElementById("otpModal");
+            modal.classList.remove("hidden");
+            document.getElementById("otpInput").value = "";
+            document.getElementById("otpInput").focus();
+        }
         
-        // Event Listeners
-        document.addEventListener("DOMContentLoaded", () => {
-            initializeEventListeners();
-        });
-        
-        // Functions
+        function hideOtpModal() {
+            document.getElementById("otpModal").classList.add("hidden");
+            selectedMessageId = null;
+        }
+
         function initializeEventListeners() {
             // Message selection
             document.addEventListener("click", (e) => {
@@ -193,148 +599,51 @@
                     verifyOtp();
                 }
             });
-        }
-        
-        function showOtpModal() {
-            const modal = document.getElementById("otpModal");
-            modal.classList.remove("hidden");
-            document.getElementById("otpInput").value = "";
-            document.getElementById("otpInput").focus();
-        }
-        
-        function hideOtpModal() {
-            document.getElementById("otpModal").classList.add("hidden");
-            selectedMessageId = null;
+
+            // Navigation buttons
+            document.getElementById("btnLogout")?.addEventListener("click", () => {
+                Auth.clearAll();
+                window.location.href = "/";
+            });
+
+            document.getElementById("btnInbox")?.addEventListener("click", () => {
+                window.location.href = "/inbox";
+            });
+
+            document.getElementById("btnCompose")?.addEventListener("click", () => {
+                window.location.href = "/compose";
+            });
+
+            document.getElementById("btnSent")?.addEventListener("click", () => {
+                window.location.href = "/sent";
+            });
+
+            // Refresh button
+            document.getElementById("refreshInbox")?.addEventListener("click", async () => {
+                UI.showNotification("Refreshing inbox...");
+                await loadAndRenderInbox();
+            });
         }
 
-        function updateOtpButtonState(isLoading = false) {
-            const otpBtn = document.getElementById("requestOtpBtn");
-            if (!otpBtn) return;
-
-            if (isLoading) {
-                otpBtn.disabled = true;
-                otpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
-            } else {
-                otpBtn.disabled = false;
-                otpBtn.innerHTML = '<i class="fas fa-key"></i> Request OTP';
-            }
-            isRequestingOtp = isLoading;
-        }
-        
-        async function verifyOtp() {
-            const otp = document.getElementById("otpInput").value.trim();
-            const verifyBtn = document.getElementById("verifyOtpBtn");
+        // ==================== INITIALIZATION ====================
+        async function initializeApp() {
+            // Check authentication first
+            if (!Auth.checkAuth()) return;
             
-            if (!otp) {
-                showNotification("Please enter the OTP.", true);
-                return;
-            }
-
-            if (otp.length !== 6) {
-                showNotification("OTP must be 6 digits.", true);
-                return;
-            }
+            // Initialize user info
+            UI.initializeUserInfo();
             
-            try {
-                // Show loading state
-                verifyBtn.disabled = true;
-                verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
-
-                const res = await fetch("/api/verify-otp", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${getAuthToken()}`
-                    },
-                    body: JSON.stringify({ otp })
-                });
-                
-                const data = await res.json();
-                
-                if (data.success) {
-                    hideOtpModal();
-                    showNotification("OTP verified successfully!");
-                    window.location.href = `/view_message/${selectedMessageId}`;
-                } else {
-                    showNotification(data.msg || "Invalid OTP", true);
-                    document.getElementById("otpInput").value = "";
-                    document.getElementById("otpInput").focus();
-                }
-            } catch (err) {
-                console.error("OTP verification error:", err);
-                showNotification(err.message || "Error verifying OTP", true);
-            } finally {
-                verifyBtn.disabled = false;
-                verifyBtn.innerHTML = 'Verify';
-            }
-        }
-        
-        async function requestOtp() {
-            if (isRequestingOtp) return;
-
-            try {
-                updateOtpButtonState(true);
-                
-                const res = await fetch("/api/request-otp", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${getAuthToken()}`
-                    },
-                    body: JSON.stringify({})
-                });
-                
-                const data = await res.json();
-                
-                if (!res.ok) {
-                    throw new Error(data.msg || `Request failed (${res.status})`);
-                }
-                
-                if (data.success) {
-                    showNotification(data.msg || "OTP sent to your Gmail!");
-                } else {
-                    throw new Error(data.msg || "Failed to request OTP");
-                }
-            } catch (err) {
-                console.error("OTP Request Error:", err);
-                
-                // Handle specific error cases
-                let errorMessage = "Failed to request OTP. Please try again.";
-                if (err.message.includes("500")) {
-                    errorMessage = "Server error. Please try again later.";
-                } else if (err.message.includes("Network")) {
-                    errorMessage = "Network error. Please check your connection.";
-                } else {
-                    errorMessage = err.message || errorMessage;
-                }
-                
-                showNotification(errorMessage, true);
-            } finally {
-                updateOtpButtonState(false);
-            }
-        }
-
-        // Helper functions
-        function getAuthToken() {
-            return localStorage.getItem("token");
-        }
-
-        function showNotification(message, isError = false) {
-            const notification = document.getElementById("notification");
-            if (!notification) return;
+            // Setup event listeners
+            initializeEventListeners();
             
-            notification.textContent = message;
-            notification.className = `notification ${isError ? "error" : ""} show`;
+            // Load inbox
+            await loadAndRenderInbox();
             
-            setTimeout(() => {
-                notification.classList.remove("show");
-            }, 3000);
+            console.debug("App initialized successfully");
         }
 
-        // Auto-focus on OTP input when modal opens
-        document.getElementById('otpModal')?.addEventListener('shown', () => {
-            document.getElementById('otpInput')?.focus();
-        });
+        // Start the application when DOM is loaded
+        document.addEventListener("DOMContentLoaded", initializeApp);
     </script>
 </body>
 </html>
