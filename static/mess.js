@@ -45,7 +45,7 @@ const Auth = {
 };
 
 /**
- * API Communication - FIXED VERSION
+ * API Communication - IMPROVED ERROR HANDLING
  */
 const API = {
     fetch: async (url, options = {}) => {
@@ -73,10 +73,16 @@ const API = {
 
             clearTimeout(timeoutId);
 
+            // Handle specific status codes
             if (response.status === 401) {
                 Auth.clearAll();
                 window.location.href = '/';
                 throw new Error("Session expired. Please login again.");
+            }
+
+            if (response.status === 500) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.msg || "Server error. Please try again later.");
             }
 
             if (!response.ok) {
@@ -101,6 +107,47 @@ const API = {
             }
             
             throw new Error(errorMessage);
+        }
+    },
+
+    // OTP-specific methods
+    requestOtp: async () => {
+        try {
+            const response = await API.fetch("/api/request-otp", {
+                method: "POST",
+                body: JSON.stringify({})
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.msg || "Failed to request OTP");
+            }
+            
+            return data;
+        } catch (error) {
+            console.error("Failed to request OTP:", error);
+            throw error;
+        }
+    },
+
+    verifyOtp: async (otp) => {
+        try {
+            const response = await API.fetch("/api/verify-otp", {
+                method: "POST",
+                body: JSON.stringify({ otp })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.msg || "Invalid OTP");
+            }
+            
+            return data;
+        } catch (error) {
+            console.error("Failed to verify OTP:", error);
+            throw error;
         }
     },
 

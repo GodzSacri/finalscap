@@ -68,6 +68,21 @@
         .modal-actions button:hover {
             background: #5a55d4;
         }
+
+        .request-otp-btn {
+            background: #4CAF50;
+            margin-left: 10px;
+        }
+
+        .request-otp-btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .otp-loading {
+            display: inline-block;
+            margin-left: 5px;
+        }
     </style>
 </head>
 
@@ -108,7 +123,7 @@
                         <button id="refreshInbox" class="refresh-btn">
                             <i class="fas fa-sync-alt"></i> Refresh
                         </button>
-                        <button id="requestOtpBtn" class="refresh-btn">
+                        <button id="requestOtpBtn" class="refresh-btn request-otp-btn">
                             <i class="fas fa-key"></i> Request OTP
                         </button>
                     </div>
@@ -146,6 +161,7 @@
     <script>
         // Global Variables
         let selectedMessageId = null;
+        let isRequestingOtp = false;
         
         // Event Listeners
         document.addEventListener("DOMContentLoaded", () => {
@@ -169,6 +185,14 @@
             
             // Request OTP button
             document.getElementById("requestOtpBtn").addEventListener("click", requestOtp);
+
+            // Handle Enter key in OTP input
+            document.getElementById("otpInput").addEventListener("keypress", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    verifyOtp();
+                }
+            });
         }
         
         function showOtpModal() {
@@ -182,56 +206,135 @@
             document.getElementById("otpModal").classList.add("hidden");
             selectedMessageId = null;
         }
+
+        function updateOtpButtonState(isLoading = false) {
+            const otpBtn = document.getElementById("requestOtpBtn");
+            if (!otpBtn) return;
+
+            if (isLoading) {
+                otpBtn.disabled = true;
+                otpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
+            } else {
+                otpBtn.disabled = false;
+                otpBtn.innerHTML = '<i class="fas fa-key"></i> Request OTP';
+            }
+            isRequestingOtp = isLoading;
+        }
         
         async function verifyOtp() {
             const otp = document.getElementById("otpInput").value.trim();
+            const verifyBtn = document.getElementById("verifyOtpBtn");
             
             if (!otp) {
-                UI.showNotification("Please enter the OTP.", true);
+                showNotification("Please enter the OTP.", true);
+                return;
+            }
+
+            if (otp.length !== 6) {
+                showNotification("OTP must be 6 digits.", true);
                 return;
             }
             
             try {
-                const res = await API.fetch("/api/verify-otp", {
+                // Show loading state
+                verifyBtn.disabled = true;
+                verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+
+                const res = await fetch("/api/verify-otp", {
                     method: "POST",
-                    body: JSON.stringify({ otp }),
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${getAuthToken()}`
+                    },
+                    body: JSON.stringify({ otp })
                 });
                 
                 const data = await res.json();
                 
                 if (data.success) {
                     hideOtpModal();
+                    showNotification("OTP verified successfully!");
                     window.location.href = `/view_message/${selectedMessageId}`;
                 } else {
-                    UI.showNotification(data.msg || "Invalid OTP", true);
+                    showNotification(data.msg || "Invalid OTP", true);
+                    document.getElementById("otpInput").value = "";
+                    document.getElementById("otpInput").focus();
                 }
             } catch (err) {
-                UI.showNotification(err.message || "Error verifying OTP", true);
+                console.error("OTP verification error:", err);
+                showNotification(err.message || "Error verifying OTP", true);
+            } finally {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = 'Verify';
             }
         }
         
         async function requestOtp() {
+            if (isRequestingOtp) return;
+
             try {
-                const res = await fetch(`${CONFIG.API_URL}/api/request-otp`, {
+                updateOtpButtonState(true);
+                
+                const res = await fetch("/api/request-otp", {
                     method: "POST",
                     headers: {
-                        "Authorization": `Bearer ${Auth.getToken()}`,
                         "Content-Type": "application/json",
+                        "Authorization": `Bearer ${getAuthToken()}`
                     },
-                    body: JSON.stringify({}),
+                    body: JSON.stringify({})
                 });
                 
+                const data = await res.json();
+                
                 if (!res.ok) {
-                    throw new Error(`Request failed (${res.status})`);
+                    throw new Error(data.msg || `Request failed (${res.status})`);
                 }
                 
-                const data = await res.json();
-                UI.showNotification(data.msg || "OTP sent to your Gmail!");
+                if (data.success) {
+                    showNotification(data.msg || "OTP sent to your Gmail!");
+                } else {
+                    throw new Error(data.msg || "Failed to request OTP");
+                }
             } catch (err) {
                 console.error("OTP Request Error:", err);
-                UI.showNotification("Failed to request OTP. Please try again.", true);
+                
+                // Handle specific error cases
+                let errorMessage = "Failed to request OTP. Please try again.";
+                if (err.message.includes("500")) {
+                    errorMessage = "Server error. Please try again later.";
+                } else if (err.message.includes("Network")) {
+                    errorMessage = "Network error. Please check your connection.";
+                } else {
+                    errorMessage = err.message || errorMessage;
+                }
+                
+                showNotification(errorMessage, true);
+            } finally {
+                updateOtpButtonState(false);
             }
         }
+
+        // Helper functions
+        function getAuthToken() {
+            return localStorage.getItem("token");
+        }
+
+        function showNotification(message, isError = false) {
+            const notification = document.getElementById("notification");
+            if (!notification) return;
+            
+            notification.textContent = message;
+            notification.className = `notification ${isError ? "error" : ""} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove("show");
+            }, 3000);
+        }
+
+        // Auto-focus on OTP input when modal opens
+        document.getElementById('otpModal')?.addEventListener('shown', () => {
+            document.getElementById('otpInput')?.focus();
+        });
     </script>
 </body>
 </html>
