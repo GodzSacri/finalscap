@@ -45,7 +45,7 @@ const Auth = {
 };
 
 /**
- * API Communication
+ * API Communication - FIXED VERSION
  */
 const API = {
     fetch: async (url, options = {}) => {
@@ -57,9 +57,12 @@ const API = {
             ...options.headers
         };
 
+        let controller;
+        let timeoutId;
+
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+            controller = new AbortController();
+            timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
 
             const response = await fetch(fullUrl, { 
                 ...options, 
@@ -83,12 +86,15 @@ const API = {
 
             return response;
         } catch (error) {
+            // Clear timeout if it hasn't fired yet
+            if (timeoutId) clearTimeout(timeoutId);
+            
             console.error("API Error:", error);
             let errorMessage = "An error occurred";
             
             if (error.name === 'AbortError') {
                 errorMessage = "Request timed out. Please try again.";
-            } else if (error.name === 'TypeError') {
+            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
                 errorMessage = "Network error. Please check your connection.";
             } else {
                 errorMessage = error.message || errorMessage;
@@ -189,7 +195,6 @@ const UI = {
         refreshSent: document.getElementById("refreshSent"),
         notification: document.getElementById("notification"),
         emailValidationMsg: document.getElementById("emailValidationMsg"),
-
         attachmentInput: document.getElementById("attachment")
     },
 
@@ -461,7 +466,7 @@ async function handleSendMessage() {
 
         if (attachmentInput && attachmentInput.files.length > 0) {
             for (let i = 0; i < attachmentInput.files.length; i++) {
-                formData.append('attachments', attachmentInput.files[i]); // match backend key
+                formData.append('attachments', attachmentInput.files[i]);
             }
         }
 
@@ -469,19 +474,25 @@ async function handleSendMessage() {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${Auth.getToken()}`
-                // Do not set 'Content-Type' when using FormData
             },
             body: formData
         });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.msg || `Request failed with status ${response.status}`);
+        }
 
         const result = await response.json();
         if (!result.success) throw new Error(result.msg);
 
         UI.showNotification("Message sent successfully!");
         UI.clearForm();
-        document.getElementById("fileNames").textContent = ""; // Clear preview
+        const fileNamesDisplay = document.getElementById("fileNames");
+        if (fileNamesDisplay) fileNamesDisplay.textContent = "";
         setTimeout(() => window.location.href = "/sent", 1500);
     } catch (err) {
+        console.error("Send message error:", err);
         UI.showNotification(err.message || "Failed to send message", true);
     } finally {
         sendBtn.disabled = false;
@@ -489,6 +500,7 @@ async function handleSendMessage() {
     }
 }
 
+// Initialize file attachment display
 const { attachmentInput } = UI.elements;
 const fileNamesDisplay = document.getElementById("fileNames");
 
@@ -550,8 +562,6 @@ async function initializeApp() {
         case "/sent":
             loadAndRenderSent();
             break;
-
-            
         case "/compose":
             // Focus on first input field
             const { emailInput } = UI.elements;
