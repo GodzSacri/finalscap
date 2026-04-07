@@ -1,5 +1,5 @@
 // ==================== CONSTANTS AND CONFIGURATION ====================
-const CONFIG = {
+export const CONFIG = {
     API_URL: "https://finalscap.onrender.com",
     TOKEN_KEY: "token",
     EMAIL_KEY: "email",
