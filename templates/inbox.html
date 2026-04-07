@@ -1,649 +1,202 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SecureSys Mail - Inbox</title>
-    
-    <!-- External Stylesheets -->
-    <link rel="stylesheet" href="/static/mess.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Modal Styles -->
-    <style>
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-        
-        .modal.hidden {
-            display: none;
-        }
-        
-        .modal-content {
-            background: #3b3f9c;
-            padding: 25px;
-            border-radius: 10px;
-            width: 320px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            text-align: center;
-        }
-        
-        .modal-content input {
-            width: 100%;
-            padding: 10px;
-            margin: 15px 0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-            color: #000;
-        }
-        
-        .modal-content h3 {
-            color: #000;
-        }
-        
-        .modal-actions {
-            display: flex;
-            justify-content: space-between;
-        }
-        
-        .modal-actions button {
-            padding: 10px 20px;
-            border: none;
-            background: #6c63ff;
-            color: #fff;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        
-        .modal-actions button:hover {
-            background: #5a55d4;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SecureSys Mail - Inbox</title>
+  <link rel="stylesheet" href="/static/mess.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
 
-        .request-otp-btn {
-            background: #4CAF50;
-            margin-left: 10px;
-        }
+    .modal.hidden {
+      display: none;
+    }
 
-        .request-otp-btn:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
-        }
+    .modal-content {
+      background: #3b3f9c;
+      padding: 25px;
+      border-radius: 10px;
+      width: 320px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      text-align: center;
+    }
 
-        .otp-loading {
-            display: inline-block;
-            margin-left: 5px;
-        }
+    .modal-content input {
+      width: 100%;
+      padding: 10px;
+      margin: 15px 0;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 16px;
+      color: #000;
+    }
 
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            background: #4CAF50;
-            color: white;
-            border-radius: 5px;
-            z-index: 10000;
-            transform: translateX(400px);
-            transition: transform 0.3s ease;
-        }
+    .modal-content h3 {
+      color: #000;
+    }
 
-        .notification.show {
-            transform: translateX(0);
-        }
+    .modal-actions {
+      display: flex;
+      justify-content: space-between;
+    }
 
-        .notification.error {
-            background: #f44336;
-        }
+    .modal-actions button {
+      padding: 10px 20px;
+      border: none;
+      background: #6c63ff;
+      color: #fff;
+      border-radius: 5px;
+      cursor: pointer;
+    }
 
-        .loading-msg {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-        }
-
-        .error-msg {
-            text-align: center;
-            padding: 20px;
-            color: #f44336;
-        }
-
-        .message-item {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 15px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        .message-item:hover {
-            background-color: #f5f5f5;
-        }
-
-        .encrypted-message {
-            border-left: 4px solid #4CAF50;
-        }
-
-        .encryption-badge {
-            background: #4CAF50;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            margin-left: 10px;
-        }
-
-        .message-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .no-messages {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-            font-style: italic;
-        }
-    </style>
+    .modal-actions button:hover {
+      background: #5a55d4;
+    }
+  </style>
 </head>
-
 <body>
-    <!-- Main Container -->
-    <div class="container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2><i class="fas fa-shield-alt"></i> SecureSys</h2>
-            </div>
-            
-            <div class="user-info">
-                <span id="userEmail" class="user-email"></span>
-                <button id="btnLogout" class="logout-btn">
-                    <i class="fas fa-sign-out-alt"></i> Logout
-                </button>
-            </div>
-            
-            <nav class="sidebar-nav">
-                <button id="btnCompose" class="nav-btn">
-                    <i class="fas fa-edit"></i> Compose
-                </button>
-                <button id="btnInbox" class="nav-btn active">
-                    <i class="fas fa-inbox"></i> Inbox
-                </button>
-                <button id="btnSent" class="nav-btn">
-                    <i class="fas fa-paper-plane"></i> Sent
-                </button>
-            </nav>
-        </aside>
-        
-        <!-- Main Content -->
-        <main class="content">
-            <section id="inboxSection">
-                <div class="section-header">
-                    <h3><i class="fas fa-inbox"></i> Inbox</h3>
-                    <div>
-                        <button id="refreshInbox" class="refresh-btn">
-                            <i class="fas fa-sync-alt"></i> Refresh
-                        </button>
-                        <button id="requestOtpBtn" class="refresh-btn request-otp-btn">
-                            <i class="fas fa-key"></i> Request OTP
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="messageList" class="message-list">
-                    <div class="loading-msg">
-                        <i class="fas fa-spinner fa-spin"></i> Loading messages...
-                    </div>
-                </div>
-            </section>
-        </main>
-    </div>
-    
-    <!-- Notification -->
-    <div id="notification" class="notification hidden"></div>
-    
-    <!-- OTP Modal -->
-    <div id="otpModal" class="modal hidden">
-        <div class="modal-content">
-            <h3>Enter OTP</h3>
-            <input type="text" id="otpInput" placeholder="Enter OTP here" maxlength="6" />
-            <div class="modal-actions">
-                <button id="verifyOtpBtn">Verify</button>
-                <button id="cancelOtpBtn">Cancel</button>
-            </div>
+  <div class="container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2><i class="fas fa-shield-alt"></i> SecureSys</h2>
+      </div>
+
+      <div class="user-info">
+        <!-- Removed email display here -->
+        <button id="btnLogout" class="logout-btn">
+          <i class="fas fa-sign-out-alt"></i> Logout
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button id="btnCompose" class="nav-btn">
+          <i class="fas fa-edit"></i> Compose
+        </button>
+        <button id="btnInbox" class="nav-btn active">
+          <i class="fas fa-inbox"></i> Inbox
+        </button>
+        <button id="btnSent" class="nav-btn">
+          <i class="fas fa-paper-plane"></i> Sent
+        </button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <section id="inboxSection">
+        <div class="section-header">
+          <h3><i class="fas fa-inbox"></i> Inbox</h3>
+          <div>
+            <button id="refreshInbox" class="refresh-btn">
+              <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <button onclick="requestOtp()" class="refresh-btn">
+              <i class="fas fa-key"></i> Request OTP
+            </button>
+          </div>
         </div>
+        <div id="messageList" class="message-list">
+          <div class="loading-msg">
+            <i class="fas fa-spinner fa-spin"></i> Loading messages...
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="notification" class="notification hidden"></div>
+
+  <!-- OTP Modal -->
+  <div id="otpModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Enter OTP</h3>
+      <input type="text" id="otpInput" placeholder="Enter OTP here" maxlength="6" />
+      <div class="modal-actions">
+        <button id="verifyOtpBtn">Verify</button>
+        <button id="cancelOtpBtn">Cancel</button>
+      </div>
     </div>
-    
-    <!-- Embedded JavaScript -->
-    <script>
-        // ==================== CONSTANTS AND CONFIGURATION ====================
-        const CONFIG = {
-            API_URL: "https://finalscap.onrender.com",
-            TOKEN_KEY: "token",
-            EMAIL_KEY: "email",
-            ALLOWED_PATHS: ['/', '/login', '/register'],
-            REQUEST_TIMEOUT: 30000,
-            NOTIFICATION_DURATION: 3000
-        };
+  </div>
 
-        const Auth = {
-            getToken: () => localStorage.getItem(CONFIG.TOKEN_KEY),
-            setToken: (token) => localStorage.setItem(CONFIG.TOKEN_KEY, token),
-            clearToken: () => localStorage.removeItem(CONFIG.TOKEN_KEY),
-            getEmail: () => localStorage.getItem(CONFIG.EMAIL_KEY),
-            setEmail: (email) => localStorage.setItem(CONFIG.EMAIL_KEY, email),
-            clearEmail: () => localStorage.removeItem(CONFIG.EMAIL_KEY),
-            clearAll: () => localStorage.clear(),
-            
-            isTokenValid: () => {
-                const token = Auth.getToken();
-                if (!token) return false;
-                
-                try {
-                    const tokenData = JSON.parse(atob(token.split('.')[1]));
-                    return tokenData.exp * 1000 > Date.now();
-                } catch (e) {
-                    return false;
-                }
-            },
-            
-            checkAuth: () => {
-                const currentPath = window.location.pathname;
-                const isAllowedPath = CONFIG.ALLOWED_PATHS.some(
-                    path => currentPath === path || currentPath.startsWith(path + '/')
-                );
-                
-                if (!Auth.isTokenValid() && !isAllowedPath) {
-                    Auth.clearAll();
-                    window.location.href = '/';
-                    return false;
-                }
-                return true;
-            }
-        };
+  <script src="/static/mess.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script>
+    let selectedMessageId = null;
 
-        // ==================== API COMMUNICATION ====================
-        const API = {
-            fetch: async (url, options = {}) => {
-                const fullUrl = url.startsWith('http') ? url : `${CONFIG.API_URL}${url}`;
-                
-                const headers = {
-                    'Authorization': `Bearer ${Auth.getToken()}`,
-                    'Content-Type': 'application/json',
-                    ...options.headers
-                };
+    document.addEventListener("click", function(e) {
+      const target = e.target.closest(".message-item");
+      if (target) {
+        const messageId = target.dataset.id;
+        selectedMessageId = messageId;
+        console.log(messageId)
+        showOtpModal();
+      }
+    });
 
-                let controller;
-                let timeoutId;
+    function showOtpModal() {
+      document.getElementById("otpModal").classList.remove("hidden");
+      document.getElementById("otpInput").value = '';
+      document.getElementById("otpInput").focus();
+    }
 
-                try {
-                    controller = new AbortController();
-                    timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+    function hideOtpModal() {
+      document.getElementById("otpModal").classList.add("hidden");
+      selectedMessageId = null;
+    }
 
-                    const response = await fetch(fullUrl, { 
-                        ...options, 
-                        headers,
-                        signal: controller.signal
-                    });
+    document.getElementById("cancelOtpBtn").addEventListener("click", hideOtpModal);
 
-                    clearTimeout(timeoutId);
+    document.getElementById("verifyOtpBtn").addEventListener("click", async function () {
+      const otp = document.getElementById("otpInput").value.trim();
+      console.log(selectedMessageId)
+      if (!otp) {
+        UI.showNotification("Please enter the OTP.", true);
+        return;
+      }
 
-                    if (response.status === 401) {
-                        Auth.clearAll();
-                        window.location.href = '/';
-                        throw new Error("Session expired. Please login again.");
-                    }
+      try {
+        const response = await API.fetch(`/api/verify-otp`, {
+          method: "POST",
+          body: JSON.stringify({ otp })
+        });
 
-                    if (response.status === 500) {
-                        throw new Error("Server error. Please try again later.");
-                    }
+        const data = await response.json();
 
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.msg || `Request failed with status ${response.status}`);
-                    }
-
-                    return response;
-                } catch (error) {
-                    if (timeoutId) clearTimeout(timeoutId);
-                    
-                    console.error("API Error:", error);
-                    let errorMessage = "An error occurred";
-                    
-                    if (error.name === 'AbortError') {
-                        errorMessage = "Request timed out. Please try again.";
-                    } else if (error.name === 'TypeError') {
-                        errorMessage = "Network error. Please check your connection.";
-                    } else {
-                        errorMessage = error.message || errorMessage;
-                    }
-                    
-                    throw new Error(errorMessage);
-                }
-            },
-
-            loadInbox: async () => {
-                try {
-                    const response = await API.fetch("/api/inbox");
-                    const data = await response.json();
-                    
-                    if (!data.success) {
-                        throw new Error(data.msg || "Failed to load inbox");
-                    }
-                    
-                    return data.messages || [];
-                } catch (error) {
-                    console.error("Failed to load inbox:", error);
-                    throw error;
-                }
-            },
-
-            requestOtp: async () => {
-                try {
-                    const response = await API.fetch("/api/request-otp", {
-                        method: "POST",
-                        body: JSON.stringify({})
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (!data.success) {
-                        throw new Error(data.msg || "Failed to request OTP");
-                    }
-                    
-                    return data;
-                } catch (error) {
-                    console.error("Failed to request OTP:", error);
-                    throw error;
-                }
-            },
-
-            verifyOtp: async (otp) => {
-                try {
-                    const response = await API.fetch("/api/verify-otp", {
-                        method: "POST",
-                        body: JSON.stringify({ otp })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (!data.success) {
-                        throw new Error(data.msg || "Invalid OTP");
-                    }
-                    
-                    return data;
-                } catch (error) {
-                    console.error("Failed to verify OTP:", error);
-                    throw error;
-                }
-            }
-        };
-
-        // ==================== UI MANAGEMENT ====================
-        const UI = {
-            showNotification: (message, isError = false) => {
-                const notification = document.getElementById("notification");
-                if (!notification) return;
-                
-                notification.textContent = message;
-                notification.className = `notification ${isError ? "error" : ""} show`;
-                
-                setTimeout(() => {
-                    notification.classList.remove("show");
-                }, CONFIG.NOTIFICATION_DURATION);
-            },
-
-            renderMessages: (messages, container) => {
-                if (!container) return;
-                
-                container.innerHTML = messages.length ? 
-                    messages.map(msg => `
-                        <div class="message-item ${msg.is_encrypted ? 'encrypted-message' : ''}" data-id="${msg.id}">
-                            <div class="message-header">
-                                <span class="from">
-                                    <i class="fas fa-user"></i> 
-                                    From: ${msg.sender_email || 'Unknown sender'}
-                                </span>
-                                <span class="to">
-                                    <i class="fas fa-arrow-right"></i> 
-                                   To: ${msg.recipient_email || 'Unknown recipient'}
-                                </span>
-                                <span class="date">${new Date(msg.timestamp).toLocaleString()}</span>
-                                ${msg.is_encrypted ? '<span class="encryption-badge"><i class="fas fa-lock"></i> Encrypted</span>' : ''}
-                            </div>
-                            <div class="message-subject">
-                                <strong>Subject:</strong> ${msg.subject || 'No subject'}
-                            </div>
-                        </div>
-                    `).join('') :
-                    '<div class="no-messages">No messages found</div>';
-            },
-
-            showLoading: (container, message = "Loading...") => {
-                if (container) {
-                    container.innerHTML = `
-                        <div class="loading-msg">
-                            <i class="fas fa-spinner fa-spin"></i> ${message}
-                        </div>
-                    `;
-                }
-            },
-
-            showError: (container, message = "An error occurred") => {
-                if (container) {
-                    container.innerHTML = `
-                        <div class="error-msg">
-                            <i class="fas fa-exclamation-triangle"></i> ${message}
-                        </div>
-                    `;
-                }
-            },
-
-            updateOtpButtonState: (isLoading = false) => {
-                const otpBtn = document.getElementById("requestOtpBtn");
-                if (!otpBtn) return;
-
-                if (isLoading) {
-                    otpBtn.disabled = true;
-                    otpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
-                } else {
-                    otpBtn.disabled = false;
-                    otpBtn.innerHTML = '<i class="fas fa-key"></i> Request OTP';
-                }
-            },
-
-            initializeUserInfo: () => {
-                const userEmail = document.getElementById("userEmail");
-                const email = Auth.getEmail();
-                
-                if (userEmail && email) {
-                    userEmail.innerHTML = `<i class="fas fa-user-circle"></i> ${email}`;
-                }
-            }
-        };
-
-        // ==================== APPLICATION STATE ====================
-        let selectedMessageId = null;
-        let isRequestingOtp = false;
-
-        // ==================== EVENT HANDLERS ====================
-        async function loadAndRenderInbox() {
-            const messageList = document.getElementById("messageList");
-            
-            try {
-                UI.showLoading(messageList, "Loading inbox...");
-                const messages = await API.loadInbox();
-                UI.renderMessages(messages, messageList);
-                
-                if (messages.length === 0) {
-                    UI.showNotification("No messages in inbox");
-                } else {
-                    const encryptedCount = messages.filter(msg => msg.is_encrypted).length;
-                    UI.showNotification(`Loaded ${messages.length} messages${encryptedCount > 0 ? ` (${encryptedCount} encrypted)` : ''}`);
-                }
-            } catch (error) {
-                console.error("Failed to load inbox:", error);
-                UI.showError(messageList, error.message);
-                UI.showNotification(error.message || "Error loading inbox", true);
-            }
+        if (data.success) {
+          window.location.href = `/view_message/${selectedMessageId}`;
+          hideOtpModal();
+        } else {
+          UI.showNotification(data.msg || "Invalid OTP", true);
         }
+      } catch (error) {
+        UI.showNotification(error.message || "Error verifying OTP", true);
+      }
+    });
 
-        async function requestOtp() {
-            if (isRequestingOtp) return;
+    async function requestOtp() {
+      try {
+        const response = await API.fetch("/api/request-otp", {
+          method: "POST",
+          body: JSON.stringify({}) // JWT provides identity; no email needed
+        });
 
-            try {
-                isRequestingOtp = true;
-                UI.updateOtpButtonState(true);
-                
-                const data = await API.requestOtp();
-                UI.showNotification(data.msg || "OTP sent to your Gmail!");
-            } catch (error) {
-                console.error("OTP Request Error:", error);
-                
-                let errorMessage = "Failed to request OTP. Please try again.";
-                if (error.message.includes("500")) {
-                    errorMessage = "Server error. Please try again later.";
-                } else if (error.message.includes("Network")) {
-                    errorMessage = "Network error. Please check your connection.";
-                } else {
-                    errorMessage = error.message || errorMessage;
-                }
-                
-                UI.showNotification(errorMessage, true);
-            } finally {
-                isRequestingOtp = false;
-                UI.updateOtpButtonState(false);
-            }
-        }
-
-        async function verifyOtp() {
-            const otp = document.getElementById("otpInput").value.trim();
-            const verifyBtn = document.getElementById("verifyOtpBtn");
-            
-            if (!otp) {
-                UI.showNotification("Please enter the OTP.", true);
-                return;
-            }
-
-            if (otp.length !== 6) {
-                UI.showNotification("OTP must be 6 digits.", true);
-                return;
-            }
-            
-            try {
-                verifyBtn.disabled = true;
-                verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
-
-                const data = await API.verifyOtp(otp);
-                
-                UI.showNotification("OTP verified successfully!");
-                hideOtpModal();
-                window.location.href = `/view_message/${selectedMessageId}`;
-            } catch (err) {
-                console.error("OTP verification error:", err);
-                UI.showNotification(err.message || "Error verifying OTP", true);
-                document.getElementById("otpInput").value = "";
-                document.getElementById("otpInput").focus();
-            } finally {
-                verifyBtn.disabled = false;
-                verifyBtn.innerHTML = 'Verify';
-            }
-        }
-
-        function showOtpModal() {
-            const modal = document.getElementById("otpModal");
-            modal.classList.remove("hidden");
-            document.getElementById("otpInput").value = "";
-            document.getElementById("otpInput").focus();
-        }
-        
-        function hideOtpModal() {
-            document.getElementById("otpModal").classList.add("hidden");
-            selectedMessageId = null;
-        }
-
-        function initializeEventListeners() {
-            // Message selection
-            document.addEventListener("click", (e) => {
-                const target = e.target.closest(".message-item");
-                if (target) {
-                    selectedMessageId = target.dataset.id;
-                    showOtpModal();
-                }
-            });
-            
-            // OTP Modal buttons
-            document.getElementById("cancelOtpBtn").addEventListener("click", hideOtpModal);
-            document.getElementById("verifyOtpBtn").addEventListener("click", verifyOtp);
-            
-            // Request OTP button
-            document.getElementById("requestOtpBtn").addEventListener("click", requestOtp);
-
-            // Handle Enter key in OTP input
-            document.getElementById("otpInput").addEventListener("keypress", (e) => {
-                if (e.key === "Enter") {
-                    e.preventDefault();
-                    verifyOtp();
-                }
-            });
-
-            // Navigation buttons
-            document.getElementById("btnLogout")?.addEventListener("click", () => {
-                Auth.clearAll();
-                window.location.href = "/";
-            });
-
-            document.getElementById("btnInbox")?.addEventListener("click", () => {
-                window.location.href = "/inbox";
-            });
-
-            document.getElementById("btnCompose")?.addEventListener("click", () => {
-                window.location.href = "/compose";
-            });
-
-            document.getElementById("btnSent")?.addEventListener("click", () => {
-                window.location.href = "/sent";
-            });
-
-            // Refresh button
-            document.getElementById("refreshInbox")?.addEventListener("click", async () => {
-                UI.showNotification("Refreshing inbox...");
-                await loadAndRenderInbox();
-            });
-        }
-
-        // ==================== INITIALIZATION ====================
-        async function initializeApp() {
-            // Check authentication first
-            if (!Auth.checkAuth()) return;
-            
-            // Initialize user info
-            UI.initializeUserInfo();
-            
-            // Setup event listeners
-            initializeEventListeners();
-            
-            // Load inbox
-            await loadAndRenderInbox();
-            
-            console.debug("App initialized successfully");
-        }
-
-        // Start the application when DOM is loaded
-        document.addEventListener("DOMContentLoaded", initializeApp);
-    </script>
+        const data = await response.json();
+        UI.showNotification(data.msg, !data.success);
+      } catch (err) {
+        UI.showNotification("Failed to request OTP.", true);
+      }
+    }
+  </script>
 </body>
 </html>

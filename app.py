@@ -4,8 +4,9 @@ from flask import send_from_directory
 from flask_cors import CORS
 import mysql.connector
 import bcrypt
-from datetime import timedelta
+from datetime import datetime, timedelta
 import os
+from functools import wraps
 import hashlib
 import secrets
 import base64
@@ -17,32 +18,73 @@ from werkzeug.utils import secure_filename
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
+from flask import jsonify, request
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
+# Database connection
+def get_db_connection():
+    return mysql.connector.connect(
+        host="sql12.freesqldatabase.com",
+        user="sql12822302",
+        password="Z1z5u7RlJ5",
+        database="sql12822302"
+    )
+
 
 #OTP auth
 otp_store = {}
-SMTP_EMAIL = "medtech.appointment@gmail.com"
-SMTP_PASSWORD = "sbfqvehaedjpwbze"  # Use App Password for Gmail
+SMTP_EMAIL = "kyru.roque.ui@phinmaed.com"
+SMTP_PASSWORD = "wgbj qekv jjtj qnks"  # Use App Password for Gmail
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
+def test_send():
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_EMAIL
+        msg['To'] = SMTP_EMAIL  # send to yourself for test
+        msg['Subject'] = "SMTP TEST from Python"
+        body = "If you see this, SMTP login works!"
+        msg.attach(MIMEText(body, 'plain'))
 
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_EMAIL, SMTP_PASSWORD)
+        server.sendmail(SMTP_EMAIL, SMTP_EMAIL, msg.as_string())
+        server.quit()
+        print("SUCCESS: Test email sent!")
+    except Exception as e:
+        print("FAILED:", str(e))
 # Enhanced CORS configuration
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["https://finalscap.onrender.com"],
-        "methods": ["GET", "POST", "PUT", "DELETE"],
-        "allow_headers": ["Authorization", "Content-Type"]
-    }
-})
+# CORS(app, resources={
+#     r"/api/*": {
+#         "origins": ["http://localhost", "http://127.0.0.1"],
+#         "methods": ["GET", "POST", "PUT", "DELETE"],
+#         "allow_headers": ["Authorization", "Content-Type"]
+#     }
+# })
 
 # JWT Configuration
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'super-secret-key')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 jwt = JWTManager(app)
+
+def admin_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        email = get_jwt_identity()
+        db = get_db_connection()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT role FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        db.close()
+        if not user or user['role'] != 'admin':
+            return jsonify({"success": False, "msg": "Admin access required"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
 
 # Encryption Configuration
 ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', 'your-32-byte-encryption-key-here!!')[:32].encode()
@@ -102,18 +144,9 @@ class MessageEncryption:
     def hash_sha256(text):
         return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
-# Database connection
-def get_db_connection():
-    return mysql.connector.connect(
-        host="sql12.freesqldatabase.com",
-        user="sql12805028",
-        password="dcGkiB2xte",
-        database="sql12805028"
-    )
-
-# Improved login endpoint
 @app.route('/api/login', methods=['POST'])
 def login():
+    db = None
     try:
         data = request.get_json()
         if not data:
@@ -121,6 +154,7 @@ def login():
 
         email = data.get('email')
         password = data.get('password')
+        ip_address = request.remote_addr
 
         if not email or not password:
             return jsonify({"success": False, "msg": "Email and password are required"}), 400
@@ -129,25 +163,72 @@ def login():
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
-        db.close()
 
-        if not user:
+        if not user or not user.get('password_hash'):
             return jsonify({"success": False, "msg": "Invalid credentials"}), 401
 
         if not bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
             return jsonify({"success": False, "msg": "Invalid credentials"}), 401
 
+        # Update last_active and last_ip
+        cursor.execute(
+            "UPDATE users SET last_active = NOW(), last_ip = %s WHERE email = %s",
+            (ip_address, email)
+        )
+        db.commit()
+
         access_token = create_access_token(identity=email)
-        
         return jsonify({
             "success": True,
             "access_token": access_token,
             "token_type": "bearer",
-            "email": email
+            "email": email,
+            "role": user['role']
         }), 200
 
     except Exception as e:
         return jsonify({"success": False, "msg": f"Login error: {str(e)}"}), 500
+
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/admin/online-users', methods=['GET'])
+@admin_required
+def admin_online_users():
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT email, role, last_active, last_ip
+            FROM users
+            WHERE last_active > (NOW() - INTERVAL 5 MINUTE)
+        """)
+        users = cursor.fetchall()
+        db.close()
+        return jsonify({"success": True, "online_users": users}), 200
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)}), 500
+    
+@app.route('/api/admin/suspicious-activity', methods=['GET'])
+@admin_required
+def admin_suspicious_activity():
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT email, COUNT(DISTINCT last_ip) AS ip_count
+            FROM users
+            WHERE last_active > (NOW() - INTERVAL 1 HOUR)
+            GROUP BY email
+            HAVING ip_count > 1
+        """)
+        suspicious_users = cursor.fetchall()
+        db.close()
+        return jsonify({"success": True, "suspicious_users": suspicious_users}), 200
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)}), 500    
     
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -158,9 +239,18 @@ def register():
 
         email = data.get('email')
         password = data.get('password')
+        role = data.get('role', 'client').lower()  # default to client if missing
 
         if not email or not password:
             return jsonify({"success": False, "msg": "Email and password are required"}), 400
+
+        # Validate role
+        if role not in ['admin', 'doctor', 'client']:
+            role = 'client'  # fallback to client
+
+        # For security: prevent normal users from registering as admin
+        if role == 'admin':
+            return jsonify({"success": False, "msg": "Cannot register as admin"}), 403
 
         # Check if user already exists
         db = get_db_connection()
@@ -176,11 +266,14 @@ def register():
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         # Insert the user into the database
-        cursor.execute("INSERT INTO users (email, password_hash) VALUES (%s, %s)", (email, hashed_password))
+        cursor.execute(
+            "INSERT INTO users (email, password_hash, role) VALUES (%s, %s, %s)",
+            (email, hashed_password, role)
+        )
         db.commit()
         db.close()
 
-        return jsonify({"success": True, "msg": "User registered successfully"}), 201
+        return jsonify({"success": True, "msg": f"User registered successfully as {role}"}), 201
 
     except Exception as e:
         return jsonify({"success": False, "msg": f"Registration error: {str(e)}"}), 500
@@ -395,7 +488,6 @@ def validate_token():
 @jwt_required()
 def request_otp():
     email = get_jwt_identity()
-
     if not email:
         return jsonify({"success": False, "msg": "Email is required"}), 400
 
@@ -409,18 +501,20 @@ def request_otp():
         msg['From'] = SMTP_EMAIL
         msg['To'] = email
         msg['Subject'] = "Your OTP Code"
-
         body = f"Your OTP code is: {otp_code}. It will expire in 5 minutes."
         msg.attach(MIMEText(body, 'plain'))
 
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.ehlo()
         server.starttls()
+        server.ehlo()
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.sendmail(SMTP_EMAIL, email, msg.as_string())
         server.quit()
-
+        print(f"OTP sent to {email}: {otp_code}")
         return jsonify({"success": True, "msg": "OTP sent successfully"}), 200
     except Exception as e:
+        print(f"Failed to send OTP: {str(e)}")
         return jsonify({"success": False, "msg": f"Failed to send OTP: {str(e)}"}), 500
 
 
@@ -437,11 +531,14 @@ def verify_otp():
         return jsonify({"success": False, "msg": "OTP is required"}), 400
 
     stored = otp_store.get(user_email)
-
     if not stored:
         return jsonify({"success": False, "msg": "No OTP requested"}), 400
 
+    # Debug output
+    print(f"OTP input: {otp_input}, stored: {stored}")
+
     if datetime.utcnow() > stored['expires_at']:
+        del otp_store[user_email]
         return jsonify({"success": False, "msg": "OTP expired"}), 400
 
     if stored['otp'] != otp_input:
@@ -449,7 +546,7 @@ def verify_otp():
 
     # OTP is valid, delete it
     del otp_store[user_email]
-
+    print(f"OTP verified for {user_email}")
     return jsonify({"success": True, "msg": "OTP verified successfully"}), 200
 
 @app.route('/view_message/<string:message_id>', methods=['GET'])
@@ -558,6 +655,30 @@ def reply_message():
     except Exception as e:
         return jsonify({"success": False, "msg": f"Failed to send reply: {str(e)}"}), 500
     
+@app.route('/api/admin/doctor-weekly-messages', methods=['GET'])
+@admin_required  # use your existing decorator
+def doctor_weekly_messages():
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(dictionary=True)
+
+        # Count messages received by doctors in the last 7 days
+        cursor.execute("""
+            SELECT u.email, COUNT(m.id) AS message_count
+            FROM users u
+            LEFT JOIN messages m
+            ON u.email = m.recipient_email AND m.timestamp >= NOW() - INTERVAL 7 DAY
+            WHERE u.role = 'doctor'
+            GROUP BY u.email
+        """)
+        doctors = cursor.fetchall()
+        db.close()
+
+        return jsonify({"success": True, "doctors": doctors}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "msg": str(e)}), 500
 
   
 
@@ -565,6 +686,11 @@ def reply_message():
 @app.route('/')
 def home():
     return render_template('login.html')
+
+@app.route('/admin')
+def admin_dashboard():
+    # For testing only:
+    return render_template("admin.html")
 
 @app.route('/inbox')
 def inbox_page():

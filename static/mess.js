@@ -1,10 +1,10 @@
 // ==================== CONSTANTS AND CONFIGURATION ====================
 const CONFIG = {
-    API_URL: "https://finalscap.onrender.com",
+    API_URL: "http://127.0.0.1:5000",
     TOKEN_KEY: "token",
     EMAIL_KEY: "email",
     ALLOWED_PATHS: ['/', '/login', '/register'],
-    REQUEST_TIMEOUT: 45000, // 45 seconds
+    REQUEST_TIMEOUT: 10000, // 10 seconds
     NOTIFICATION_DURATION: 3000 // 3 seconds
 };
 
@@ -45,7 +45,7 @@ const Auth = {
 };
 
 /**
- * API Communication - IMPROVED ERROR HANDLING
+ * API Communication
  */
 const API = {
     fetch: async (url, options = {}) => {
@@ -57,12 +57,9 @@ const API = {
             ...options.headers
         };
 
-        let controller;
-        let timeoutId;
-
         try {
-            controller = new AbortController();
-            timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
 
             const response = await fetch(fullUrl, { 
                 ...options, 
@@ -73,16 +70,10 @@ const API = {
 
             clearTimeout(timeoutId);
 
-            // Handle specific status codes
             if (response.status === 401) {
                 Auth.clearAll();
                 window.location.href = '/';
                 throw new Error("Session expired. Please login again.");
-            }
-
-            if (response.status === 500) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.msg || "Server error. Please try again later.");
             }
 
             if (!response.ok) {
@@ -92,62 +83,18 @@ const API = {
 
             return response;
         } catch (error) {
-            // Clear timeout if it hasn't fired yet
-            if (timeoutId) clearTimeout(timeoutId);
-            
             console.error("API Error:", error);
             let errorMessage = "An error occurred";
             
             if (error.name === 'AbortError') {
                 errorMessage = "Request timed out. Please try again.";
-            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            } else if (error.name === 'TypeError') {
                 errorMessage = "Network error. Please check your connection.";
             } else {
                 errorMessage = error.message || errorMessage;
             }
             
             throw new Error(errorMessage);
-        }
-    },
-
-    // OTP-specific methods
-    requestOtp: async () => {
-        try {
-            const response = await API.fetch("/api/request-otp", {
-                method: "POST",
-                body: JSON.stringify({})
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.msg || "Failed to request OTP");
-            }
-            
-            return data;
-        } catch (error) {
-            console.error("Failed to request OTP:", error);
-            throw error;
-        }
-    },
-
-    verifyOtp: async (otp) => {
-        try {
-            const response = await API.fetch("/api/verify-otp", {
-                method: "POST",
-                body: JSON.stringify({ otp })
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.msg || "Invalid OTP");
-            }
-            
-            return data;
-        } catch (error) {
-            console.error("Failed to verify OTP:", error);
-            throw error;
         }
     },
 
@@ -242,6 +189,7 @@ const UI = {
         refreshSent: document.getElementById("refreshSent"),
         notification: document.getElementById("notification"),
         emailValidationMsg: document.getElementById("emailValidationMsg"),
+
         attachmentInput: document.getElementById("attachment")
     },
 
@@ -513,7 +461,7 @@ async function handleSendMessage() {
 
         if (attachmentInput && attachmentInput.files.length > 0) {
             for (let i = 0; i < attachmentInput.files.length; i++) {
-                formData.append('attachments', attachmentInput.files[i]);
+                formData.append('attachments', attachmentInput.files[i]); // match backend key
             }
         }
 
@@ -521,25 +469,19 @@ async function handleSendMessage() {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${Auth.getToken()}`
+                // Do not set 'Content-Type' when using FormData
             },
             body: formData
         });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.msg || `Request failed with status ${response.status}`);
-        }
 
         const result = await response.json();
         if (!result.success) throw new Error(result.msg);
 
         UI.showNotification("Message sent successfully!");
         UI.clearForm();
-        const fileNamesDisplay = document.getElementById("fileNames");
-        if (fileNamesDisplay) fileNamesDisplay.textContent = "";
+        document.getElementById("fileNames").textContent = ""; // Clear preview
         setTimeout(() => window.location.href = "/sent", 1500);
     } catch (err) {
-        console.error("Send message error:", err);
         UI.showNotification(err.message || "Failed to send message", true);
     } finally {
         sendBtn.disabled = false;
@@ -547,7 +489,6 @@ async function handleSendMessage() {
     }
 }
 
-// Initialize file attachment display
 const { attachmentInput } = UI.elements;
 const fileNamesDisplay = document.getElementById("fileNames");
 
@@ -609,6 +550,8 @@ async function initializeApp() {
         case "/sent":
             loadAndRenderSent();
             break;
+
+            
         case "/compose":
             // Focus on first input field
             const { emailInput } = UI.elements;

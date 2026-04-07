@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard - SecureSys</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<style>
+body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f4f6f9; }
+header { 
+    background: #2c3e50; 
+    color: white; 
+    padding: 15px 20px; 
+    display:flex; 
+    justify-content: space-between; 
+    align-items: center;
+}
+header h1 { margin:0; font-size:1.5rem; }
+header button { 
+    background:#e74c3c; 
+    color:white; 
+    border:none; 
+    padding:8px 15px; 
+    border-radius:5px; 
+    cursor:pointer; 
+    font-weight:bold;
+}
+.container { padding:20px; }
+.tabs { display:flex; gap:10px; margin-bottom:20px; }
+.tab-btn { padding:10px 15px; background:white; border:none; border-radius:5px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+.tab-btn.active { background:#6c63ff; color:white; }
+.section { display:none; background:white; padding:20px; margin-bottom:20px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+table { width:100%; border-collapse: collapse; margin-top:10px; }
+table th, table td { padding:10px; text-align:left; border-bottom:1px solid #ddd; }
+table th { background-color:#f1f1f1; }
+.status-online { color: green; font-weight:bold; }
+.status-suspicious { color:red; font-weight:bold; }
+form label { display:block; margin-top:10px; }
+form input, form select { padding:8px; width:100%; margin-top:5px; border-radius:5px; border:1px solid #ccc; }
+form button { margin-top:15px; background:#6c63ff; color:white; border:none; padding:10px 15px; cursor:pointer; border-radius:5px; }
+#registerMsg { margin-top:10px; font-weight:bold; }
+</style>
+</head>
+<body>
+<header>
+    <h1>Admin Dashboard - SecureSys</h1>
+    <button id="logoutBtn">Logout</button>
+</header>
+
+<div class="container">
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="onlineUsersSection">Online Users</button>
+        <button class="tab-btn" data-tab="suspiciousSection">Suspicious Activity</button>
+        <button class="tab-btn" data-tab="doctorMessagesSection">Weekly Doctor Messages</button>
+        <button class="tab-btn" data-tab="registerSection">Register User</button>
+    </div>
+
+    <!-- Online Users -->
+    <div id="onlineUsersSection" class="section" style="display:block;">
+        <h2>Online Users (last 5 mins)</h2>
+        <table id="onlineUsersTable">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Last Active</th>
+                    <th>IP Address</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Suspicious Activity -->
+    <div id="suspiciousSection" class="section">
+        <h2>Suspicious Activity (multiple IPs in last hour)</h2>
+        <table id="suspiciousTable">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Number of IPs</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Weekly Doctor Messages -->
+    <div id="doctorMessagesSection" class="section">
+        <h2>Weekly Doctor Messages</h2>
+        <table id="doctorMessagesTable">
+            <thead>
+                <tr>
+                    <th>Doctor Email</th>
+                    <th>Messages This Week</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Register User -->
+    <div id="registerSection" class="section">
+        <h2>Register New User</h2>
+        <form id="registerForm">
+            <label for="regEmail">Email</label>
+            <input type="email" id="regEmail" name="email" required>
+
+            <label for="regPassword">Password</label>
+            <input type="password" id="regPassword" name="password" required>
+
+            <label for="regRole">Role</label>
+            <select id="regRole" name="role">
+                <option value="client">Client</option>
+                <option value="doctor">Doctor</option>
+            </select>
+
+            <button type="submit">Register</button>
+        </form>
+        <div id="registerMsg"></div>
+    </div>
+</div>
+
+<script>
+(async function() {
+    const ACCESS_TOKEN = localStorage.getItem('token');
+    if (!ACCESS_TOKEN) { window.location.href = '/'; return; }
+
+    // Tab functionality
+    const tabs = document.querySelectorAll('.tab-btn');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            document.querySelectorAll('.section').forEach(sec => sec.style.display='none');
+            document.getElementById(tab.dataset.tab).style.display = 'block';
+        });
+    });
+
+    // Logout
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        window.location.href = '/';
+    });
+
+    // Fetch Online Users
+    async function fetchOnlineUsers() {
+        try {
+            const res = await fetch('/api/admin/online-users', { headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } });
+            const data = await res.json();
+            if (!data.success) { if (res.status===401||res.status===403) window.location.href='/'; return; }
+            const tbody = document.querySelector("#onlineUsersTable tbody"); tbody.innerHTML='';
+            data.online_users.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${user.email}</td><td>${user.role}</td><td>${new Date(user.last_active).toLocaleString()}</td><td>${user.last_ip||'-'}</td><td class="status-online">Online</td>`;
+                tbody.appendChild(tr);
+            });
+        } catch(err){ console.error('Error fetching online users:', err); }
+    }
+
+    // Fetch Suspicious Activity
+    async function fetchSuspicious() {
+        try {
+            const res = await fetch('/api/admin/suspicious-activity', { headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } });
+            const data = await res.json();
+            if (!data.success) { if (res.status===401||res.status===403) window.location.href='/'; return; }
+            const tbody = document.querySelector("#suspiciousTable tbody"); tbody.innerHTML='';
+            data.suspicious_users.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${user.email}</td><td>${user.ip_count}</td><td class="status-suspicious">Suspicious</td>`;
+                tbody.appendChild(tr);
+            });
+        } catch(err){ console.error('Error fetching suspicious users:', err); }
+    }
+
+    // Fetch Weekly Doctor Messages
+    async function fetchDoctorMessages() {
+        try {
+            const res = await fetch('/api/admin/doctor-weekly-messages', { headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } });
+            if (!res.ok) { console.error('Server returned', res.status,res.statusText); return; }
+            const data = await res.json();
+            if (!data.success) { console.error(data.msg); return; }
+            const tbody = document.querySelector("#doctorMessagesTable tbody"); tbody.innerHTML='';
+            data.doctors.forEach(doc => { const tr=document.createElement('tr'); tr.innerHTML=`<td>${doc.email}</td><td>${doc.message_count}</td>`; tbody.appendChild(tr); });
+        } catch(err){ console.error('Error fetching doctor messages:', err); }
+    }
+
+    // Register user form
+    document.getElementById('registerForm').addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const email = document.getElementById('regEmail').value;
+        const password = document.getElementById('regPassword').value;
+        const role = document.getElementById('regRole').value;
+
+        try {
+            const res = await fetch('/api/register', {
+                method:'POST',
+                headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${ACCESS_TOKEN}` },
+                body: JSON.stringify({ email, password, role })
+            });
+            const data = await res.json();
+            const msgDiv = document.getElementById('registerMsg');
+            msgDiv.style.color = data.success ? 'green' : 'red';
+            msgDiv.textContent = data.msg;
+            if(data.success){ document.getElementById('registerForm').reset(); fetchOnlineUsers(); }
+        } catch(err){ console.error('Error registering user:', err); }
+    });
+
+    // Initial fetch and refresh
+    fetchOnlineUsers();
+    fetchSuspicious();
+    fetchDoctorMessages();
+    setInterval(fetchOnlineUsers,30000);
+    setInterval(fetchSuspicious,30000);
+    setInterval(fetchDoctorMessages,30000);
+
+})();
+</script>
+</body>
+</html>
